@@ -5,6 +5,7 @@ library(scales)
 library(ggtext)
 library(zoo)
 source("monte_carlo_func.R")
+source("utils.R")
 library(purrr)
 library(furrr)
 library(progressr)
@@ -26,7 +27,7 @@ last_data_date <- as.Date('01/09/2025', '%d/%m/%Y')
 target_dts <-
     data.frame(
         startdate = as.Date(c('01/04/2026', '01/04/2028'), '%d/%m/%Y'),
-        enddate = as.Date(c('31/03/2027', '01/04/2031'), '%d/%m/%Y'),
+        enddate = as.Date(c('31/03/2027', '01/04/2029'), '%d/%m/%Y'),
         descr = c("RTT65%", "RTT92%")
     )
 
@@ -99,6 +100,7 @@ df_list <- test_input %>%
 # Calculate coefficients of variation (how each list behaves)
 # cv_demand and cv_capacity for each specialty
 tf_summary <- map_dfr(df_list, function(.x) {
+    .x <- filter(.x, start_date < as.Date("2025-10-01"))
     cv_demand  <- sd(.x$Referrals, na.rm = TRUE) / mean(.x$Referrals, na.rm = TRUE)
     cv_capacity <- sd(.x$Removals, na.rm = TRUE) / mean(.x$Removals, na.rm = TRUE)
 
@@ -195,7 +197,8 @@ sim_func <- function(df) {
         waiting_list = current_wl
     )
 
-    data.frame(specialty = df$Specialty[1], queue = wl_queue_size(sim)[212, 2])
+    data.frame(specialty = df$Specialty[1], queue = wl_queue_size(sim)[212, 2],
+               mean_wait = wl_stats(wl_queue_size(sim))$mean_wait
 }
 
 # Apply to each specialty in df_list
@@ -205,6 +208,8 @@ results <- future_map(df_list, function(df) {
     # Combine into one data frame
     bind_rows(sims)
 })
+
+plan(sequential)
 
 # Combine all specialties into one data frame
 all_results <- bind_rows(results)
@@ -220,7 +225,7 @@ summary_results <- all_results %>%
 
 summary_results
 
-# ✅ Update df_list row 19 with median_queue
+# Update df_list row 19 with median_queue
 df_list <- map(df_list, function(df) {
     spec <- df$Specialty[1]
     median_val <- round(summary_results$median_queue[summary_results$specialty == spec])
@@ -228,10 +233,18 @@ df_list <- map(df_list, function(df) {
     df
 })
 
-plan(sequential)
 
 
 
+# add lagged 1 column for waiting list at start of period
+df_list <- map(df_list, ~ mutate(.x, Wl_start_lag = lag(Waiting.list.size, n = 1)))
+# Imput 1
+
+
+df_list <- map(df_list, function(.x) {
+    .x$Wl_start_lag[1] <- .x$Wl_start_lag[2] + .x$Referrals[1] - .x$Removals[2]
+    .x
+})
 
 
 ########## Sustainable WL calcs #####################################
@@ -294,37 +307,40 @@ df_list <- map(df_list, function(.x) {
     cv_demand <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_demand)
     cv_capacity <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_capacity)
 
-    .x$relief_capacity_65 <-
-        calc_relief_capacity(
-            demand = .x$Referrals,
-            queue_size = .x$Waiting.list.size[18],
-            target_queue_size = .x$target_wl_65[20],
-            time_to_target = 12,
-            cv_demand = cv_demand
-            )
-
-    .x$relief_capacity_65or6 <-
-        calc_relief_capacity(
-            demand = .x$Referrals,
-            queue_size = .x$Waiting.list.size[18],
-            target_queue_size = .x$target_wl_65or6[20],
-            time_to_target = 12,
-            cv_demand = cv_demand
-        )
+    # .x$relief_capacity_65 <-
+    #     calc_relief_capacity(
+    #         demand = .x$Referrals,
+    #         queue_size = .x$Waiting.list.size[19],
+    #         target_queue_size = .x$target_wl_65[20],
+    #         time_to_target = 12,
+    #         cv_demand = cv_demand
+    #         )
+    #
+    # .x$relief_capacity_65or6 <-
+    #     calc_relief_capacity(
+    #         demand = .x$Referrals,
+    #         queue_size = .x$Waiting.list.size[19],
+    #         target_queue_size = .x$target_wl_65or6[20],
+    #         time_to_target = 12,
+    #         cv_demand = cv_demand
+    #     )
 
     .x$relief_capacity_92 <-
-        calc_relief_capacity(
+        calc_relief_capacity2(
             demand = .x$Referrals,
-            queue_size = .x$target_wl_65[21],
-            target_queue_size = .x$target_wl_92[24],
-            time_to_target = 12,
+            queue_size = .x$Wl_start_lag[20],
+            target_queue_size = .x$target_wl_92[22],
+            time_to_target = 104,
+            num_referrals = round(.x$Referrals/4.33),
             cv_demand = cv_demand
         )
 
     .x
 })
 
-print(df_list[[1]], n=50)
+
+
+
 
 ######### Now add new capacity column #########################
 
@@ -334,16 +350,16 @@ df_list <- map(df_list, function(.x) {
     #                            ifelse(.x$start_date >= target_dts[1,]$startdate & .x$relief_capacity_65 >= .x$Removals,
     #                                   .x$relief_capacity_65,
     #                                   .x$Removals))
-
-    # .x$calc_capacity <- ifelse(.x$start_date >= target_dts[1,]$startdate, .x$relief_capacity_92,
-    #                            # ifelse(.x$start_date >= target_dts[1,]$startdate & .x$relief_capacity_65 >= .x$Removals,
-    #                            #        .x$relief_capacity_65,
-    #                                   .x$Removals)
     #
-    .x$calc_capacity <- ifelse(.x$start_date >= target_dts[2,]$startdate, .x$relief_capacity_92,
-                                ifelse(.x$start_date >= target_dts[1,]$startdate & .x$relief_capacity_65or6 >= .x$Removals,
-                                       .x$relief_capacity_65or6,
-                               .x$Removals))
+    # .x$calc_capacity <- ifelse(.x$start_date > target_dts[1,]$enddate & .x$start_date <= target_dts[2,]$enddate,
+    #                            .x$relief_capacity_92,
+    #                             ifelse(.x$start_date >= target_dts[1,]$startdate & .x$start_date <= target_dts[6,]$enddate >= .x$Removals,
+    #                                    .x$relief_capacity_65or6,
+    #                            .x$Removals))
+    #
+    .x$calc_capacity <- round(ifelse(.x$start_date >= target_dts[1,]$startdate & .x$start_date < target_dts[2,]$enddate,
+                               .x$relief_capacity_92,
+                               .x$Referrals)) # have to keep pace with demand
 
     .x
 })
@@ -352,7 +368,7 @@ View(df_list[[1]])
 
 target_dts[1,]$startdate
 
-write.csv(df_list[[2]], "./verify2.csv")
+write.csv(df_list[[1]], "./verify.csv")
 
 # probably need to feed first one with end of 25/26 values, and second one with end of 2026/27 values.
 # need then to move each year, so is it a lagged variable?
@@ -386,36 +402,21 @@ test_input$relief_cap <-
 # Simulations
 df <- df_list[[1]]
 
-sim_results <- map(df_list, function(df) {
-    # Take starting_wl from first row of the data frame
-    start_wl <- df[1, "Waiting.list.size", drop = TRUE]  # Adjust column name if needed
-
-    map(1:1, function(i) {
-             bsol_montecarlo_WL(
-            .data = df,
-            run_id = i,                # Different run_id
-            start_date_name = "start_date",
-            end_date_name = "end_date",
-            adds_name = "Referrals",
-            removes_name = "calc_capacity",
-            starting_wl = start_wl   # Use the first row value
-        )
-    })
-})
-
-
 library(furrr)
+library(future.mirai)
 
 # Set up parallel plan (multisession works on most OS)
-plan(multisession, workers = 6)  # Adjust workers to your CPU cores
+plan(multisession, workers = 2)  # Adjust workers to your CPU cores
+plan(mirai_multisession, workers = 2)
 start_time <- Sys.time()
+
 sim_results <- future_map(df_list, function(df) {
     # Extract starting_wl from first row
     start_wl <- df[1, "Waiting.list.size", drop = TRUE]
     if (is.na(start_wl)) start_wl <- 0
 
     # Inner parallel map (optional)
-    future_map(1:5, function(i) {
+    future_map(1:10, function(i) {
         bsol_montecarlo_WL(
             .data = df,
             run_id = i,
@@ -473,7 +474,19 @@ ggplot(as.data.frame(mc_bind[[1]]), aes(x = dates)) +
     geom_ribbon(aes(y = mean_q, ymin = lower_95CI, ymax = upper_95CI)
                 , alpha = 0.5, data = mc_agg[[1]], fill = "red") +
     geom_line(aes(y = mean_q), data = mc_agg[[1]], col = "black") +
-    geom_hline(yintercept = as.numeric(df_list[[1]][24,9]), col = "blue")+
+    geom_hline(yintercept = as.numeric(df_list[[1]][24,]$target_wl_92), col = "blue") +
+    labs(y = "Queue Size", x = "Date"
+         , title = "Simulated waiting list after raising capacity"
+         , subtitle = "Average WL over 50 runs, with 95% confidence interval")
+
+
+# Testing plot
+ggplot(as.data.frame(mc_bind[[2]]), aes(x = dates)) +
+    geom_line(aes(y = queue_size, group = run_id), alpha = 0.5, col = "grey") +
+    geom_ribbon(aes(y = mean_q, ymin = lower_95CI, ymax = upper_95CI)
+                , alpha = 0.5, data = mc_agg[[2]], fill = "red") +
+    geom_line(aes(y = mean_q), data = mc_agg[[2]], col = "black") +
+    geom_hline(yintercept = as.numeric(df_list[[2]][24,]$target_wl_92), col = "blue") +
     labs(y = "Queue Size", x = "Date"
          , title = "Simulated waiting list after raising capacity"
          , subtitle = "Average WL over 50 runs, with 95% confidence interval")
