@@ -25,20 +25,20 @@ last_data_date <- as.Date('01/09/2025', '%d/%m/%Y')
 
 target_dts <-
     data.frame(
-        startdate = as.Date(c('01/04/2026', '01/04/2027'), '%d/%m/%Y'),
-        enddate = as.Date(c('31/03/2026', '01/04/2031'), '%d/%m/%Y'),
-        descr = c("RTT 85%", "RTT95%")
+        startdate = as.Date(c('01/04/2026', '01/04/2028'), '%d/%m/%Y'),
+        enddate = as.Date(c('31/03/2027', '01/04/2031'), '%d/%m/%Y'),
+        descr = c("RTT65%", "RTT92%")
     )
 
 population_growth <-
 tibble::tribble(
           ~start_date,    ~end_date, ~ratio_increase, ~population,
-         "01/10/2025", "31/12/2025",               1,     1590793,
-         "01/01/2026", "31/12/2026",         1.00271, 1596056.425,
-         "01/01/2027", "31/12/2027",        1.005589, 1601503.998,
-         "01/01/2028", "31/12/2028",        1.009093, 1607815.611,
-         "01/01/2029", "31/12/2029",        1.013369, 1615161.207,
-         "01/01/2030", "31/12/2030",        1.017844, 1622704.257
+         "01/10/2025", "31/03/2026",               1,     1590793,
+         "01/04/2026", "31/03/2027",         1.00271, 1596056.425,
+         "01/04/2027", "31/03/2028",        1.005589, 1601503.998,
+         "01/04/2028", "31/03/2029",        1.009093, 1607815.611,
+         "01/04/2029", "31/03/2030",        1.013369, 1615161.207,
+         "01/04/2030", "31/03/2031",        1.017844, 1622704.257
          )
 
 
@@ -46,6 +46,9 @@ tibble::tribble(
 # Convert Year to Date
 population_growth$start_date <- as.Date(population_growth$start_date, '%d/%m/%Y')
 population_growth$end_date <- as.Date(population_growth$end_date, '%d/%m/%Y')
+
+
+
 
 ######## This bit is not relevant now, but leaving in#################################
 # Generate full monthly sequence
@@ -64,7 +67,7 @@ extended_df <- full_months %>%
 extended_df[1:3,]$ratio_increase <- 1.00
 extended_df[1:3,]$population <-  1590793
 
-extended_df
+print(extended_df, n = 66)
 
 #################################################################################
 
@@ -119,9 +122,12 @@ df_append <- data.frame(Specialty = NA,
 # Apply to data.frames in list.
 df_list <- map(df_list, ~ rbind(.x, df_append))
 
-#### Popualte values ####
+print(df_list[[1]], n = 50)
 
-# fill in values, median capacity
+#### Populate values logically ####
+######## Populate values ####
+
+# fill in values, specialty
 df_list <- map(df_list, function(.x) {
     spec <- first(.x$Specialty)
     .x$Specialty[is.na(.x$Specialty)] <- spec
@@ -163,26 +169,69 @@ print(df_list[[1]], n = 50)
 print(df_list[[2]], n = 50)
 
 
+#### MC to end of 2025 ####
+#Then can use to calculate target waiting lists
 
-###################WL stats#############################
-# No working at present
-#######################################################
-summary_figures <-
-    test_input |>
-    group_by(Specialty) |>
-    summarise(
-        median_referrals = median(Referrals),
-        median_removals = median(Removals),
-        median_wl = median(Waiting.list.size),
-        last_referrals = last(Referrals),
-        last_removals = last(Removals),
-        last_wl = last(Waiting.list.size)
+library(furrr)
+library(future.apply)
+
+# Parallel plan
+plan(multisession, workers = 6)
+
+# Your simulation function (unchanged)
+df <- df_list[[1]]
+rm(df)
+sim_func <- function(df) {
+    current_wl <- data.frame(
+        Referral = rep(as.Date(df$start_date[18]), df$Waiting.list.size[18]),
+        Removal = rep(as.Date(NA), df$Waiting.list.size[18])
     )
 
+    sim <- wl_simulator(
+        start_date = as.Date(df[19,]$start_date),
+        end_date = as.Date(df[19,]$end_date),
+        demand = df[19,]$Referrals,
+        capacity = df[19,]$Removals,
+        waiting_list = current_wl
+    )
 
-summary_stats <-
-    wl_stats(summary_figures[1,],
-             target = 18)
+    data.frame(specialty = df$Specialty[1], queue = wl_queue_size(sim)[212, 2])
+}
+
+# Apply to each specialty in df_list
+results <- future_map(df_list, function(df) {
+    # Run 50 simulations for this specialty
+    sims <- future_replicate(20, sim_func(df), simplify = FALSE)
+    # Combine into one data frame
+    bind_rows(sims)
+})
+
+# Combine all specialties into one data frame
+all_results <- bind_rows(results)
+
+# Summarize mean and median queue per specialty
+summary_results <- all_results %>%
+    group_by(specialty) %>%
+    summarise(
+        mean_queue = mean(queue),
+        median_queue = median(queue),
+        .groups = "drop"
+    )
+
+summary_results
+
+# ✅ Update df_list row 19 with median_queue
+df_list <- map(df_list, function(df) {
+    spec <- df$Specialty[1]
+    median_val <- round(summary_results$median_queue[summary_results$specialty == spec])
+    df$Waiting.list.size[19] <- median_val
+    df
+})
+
+plan(sequential)
+
+
+
 
 
 ########## Sustainable WL calcs #####################################
@@ -195,6 +244,8 @@ df_list <- map(df_list, function(.x) {
         factor = qexp(0.65)
     )
 
+    .x$target_wl_65or6 <- .x$target_wl_65 * 0.94
+
     .x$target_wl_92 <- calc_target_queue_size(
         demand = .x$Referrals,
         target_wait = 18,
@@ -203,9 +254,10 @@ df_list <- map(df_list, function(.x) {
     .x
 })
 
+print(df_list[[1]], n = 50)
+print(df_list[[2]], n = 50)
 
-
-# target capacity friom NHSRwaitinglist
+# target capacity from NHSRwaitinglist
 df_list <- map(df_list, function(.x) {
 
     spec <- first(.x$Specialty)
@@ -233,10 +285,87 @@ df_list <- map(df_list, function(.x) {
 })
 
 
+# target capacity from NHSRwaitinglist
+# rel_capacity <- map_dfr
+df_list <- map(df_list, function(.x) {
 
+    spec <- first(.x$Specialty)
+
+    cv_demand <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_demand)
+    cv_capacity <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_capacity)
+
+    .x$relief_capacity_65 <-
+        calc_relief_capacity(
+            demand = .x$Referrals,
+            queue_size = .x$Waiting.list.size[18],
+            target_queue_size = .x$target_wl_65[20],
+            time_to_target = 12,
+            cv_demand = cv_demand
+            )
+
+    .x$relief_capacity_65or6 <-
+        calc_relief_capacity(
+            demand = .x$Referrals,
+            queue_size = .x$Waiting.list.size[18],
+            target_queue_size = .x$target_wl_65or6[20],
+            time_to_target = 12,
+            cv_demand = cv_demand
+        )
+
+    .x$relief_capacity_92 <-
+        calc_relief_capacity(
+            demand = .x$Referrals,
+            queue_size = .x$target_wl_65[21],
+            target_queue_size = .x$target_wl_92[24],
+            time_to_target = 12,
+            cv_demand = cv_demand
+        )
+
+    .x
+})
+
+print(df_list[[1]], n=50)
+
+######### Now add new capacity column #########################
+
+df_list <- map(df_list, function(.x) {
+
+    # .x$calc_capacity <- ifelse(.x$start_date >= target_dts[2,]$startdate, .x$relief_capacity_92,
+    #                            ifelse(.x$start_date >= target_dts[1,]$startdate & .x$relief_capacity_65 >= .x$Removals,
+    #                                   .x$relief_capacity_65,
+    #                                   .x$Removals))
+
+    # .x$calc_capacity <- ifelse(.x$start_date >= target_dts[1,]$startdate, .x$relief_capacity_92,
+    #                            # ifelse(.x$start_date >= target_dts[1,]$startdate & .x$relief_capacity_65 >= .x$Removals,
+    #                            #        .x$relief_capacity_65,
+    #                                   .x$Removals)
+    #
+    .x$calc_capacity <- ifelse(.x$start_date >= target_dts[2,]$startdate, .x$relief_capacity_92,
+                                ifelse(.x$start_date >= target_dts[1,]$startdate & .x$relief_capacity_65or6 >= .x$Removals,
+                                       .x$relief_capacity_65or6,
+                               .x$Removals))
+
+    .x
+})
+
+View(df_list[[1]])
+
+target_dts[1,]$startdate
+
+write.csv(df_list[[2]], "./verify2.csv")
 
 # probably need to feed first one with end of 25/26 values, and second one with end of 2026/27 values.
 # need then to move each year, so is it a lagged variable?
+
+
+################### target for 2026/27################
+# Row 18 has last data
+
+
+targets_17 <- map_dfr(df_list, function(df){
+    df[21,c(1,8,9)]
+})
+
 
 
 ########## Relief capacity at last point ######################################
@@ -268,7 +397,7 @@ sim_results <- map(df_list, function(df) {
             start_date_name = "start_date",
             end_date_name = "end_date",
             adds_name = "Referrals",
-            removes_name = "Removals",
+            removes_name = "calc_capacity",
             starting_wl = start_wl   # Use the first row value
         )
     })
@@ -286,14 +415,14 @@ sim_results <- future_map(df_list, function(df) {
     if (is.na(start_wl)) start_wl <- 0
 
     # Inner parallel map (optional)
-    future_map(1:10, function(i) {
+    future_map(1:5, function(i) {
         bsol_montecarlo_WL(
             .data = df,
             run_id = i,
             start_date_name = "start_date",
             end_date_name = "end_date",
             adds_name = "Referrals",
-            removes_name = "Removals",
+            removes_name = "calc_capacity",
             starting_wl = start_wl
         )
     })
@@ -302,7 +431,7 @@ sim_results <- future_map(df_list, function(df) {
 
 end_time <- Sys.time()
 
-#inner_parallel <- end_time - start_time
+inner_parallel <- end_time - start_time
 #inner_sequential <- end_time - start_time
 
 # end parallel sessions
@@ -334,7 +463,7 @@ mc_agg[[1]]
 mc_agg <- map(mc_agg, ~ data.frame(
     dates = as.Date(.x$dates),
     unlist(.x$queue_size)
-)
+    )
 )
 
 
@@ -344,6 +473,18 @@ ggplot(as.data.frame(mc_bind[[1]]), aes(x = dates)) +
     geom_ribbon(aes(y = mean_q, ymin = lower_95CI, ymax = upper_95CI)
                 , alpha = 0.5, data = mc_agg[[1]], fill = "red") +
     geom_line(aes(y = mean_q), data = mc_agg[[1]], col = "black") +
+    geom_hline(yintercept = as.numeric(df_list[[1]][24,9]), col = "blue")+
     labs(y = "Queue Size", x = "Date"
          , title = "Simulated waiting list after raising capacity"
          , subtitle = "Average WL over 50 runs, with 95% confidence interval")
+
+
+#Need to take out the waiting list size at last point of data, next point would be sustainable 65%,
+#then next year would be sustainable 92%, then same each year.
+# Need target capacity calc., then add extr capacity in capacity and sim.
+df[,1]
+
+map(df_list, function(df){
+    df[df$start_date == as.Date("2025-10-01", "%Y-%m-%d")]
+})
+
