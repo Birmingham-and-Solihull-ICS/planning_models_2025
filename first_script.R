@@ -184,10 +184,10 @@ library(furrr)
 library(future.apply)
 
 # Parallel plan
-plan(multisession, workers = 6)
+plan(multisession, workers = 10)
 
-library(future.mirai)
-plan(mirai_multisession, workers = 6)
+#library(future.mirai)
+#plan(mirai_multisession, workers = 6)
 
 # Your simulation function (unchanged)
 df <- df_list[[2]]
@@ -219,6 +219,8 @@ results <- map(df_list, function(df) {
 })
 
 plan(sequential)
+
+saveRDs(results, "./data/results_input2025_bsol_all.rds")
 
 # Combine all specialties into one data frame
 all_results <- bind_rows(results)

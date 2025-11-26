@@ -1,6 +1,7 @@
 # install.packages("devtools")
 # devtools::install_github("nhs-bnssg-analytics/NHSRtt")
-# devtools::install_github("nhs-bnssg-analytics/RTT_compartmental_modelling")
+# devtools::install_github("nhs-bnssg-analytics/RTTshiny")
+# 2
 library(dplyr)
 library(NHSRtt)
 library(RTTshiny)
@@ -274,6 +275,6 @@ optimised_projections <- optimised_projections |>
 
 write.csv(
   optimised_projections,
-  "ad_hoc/commissioning_example/birm_example.csv",
+  "./data/birm_compartment_example.csv",
   row.names = FALSE
 )
