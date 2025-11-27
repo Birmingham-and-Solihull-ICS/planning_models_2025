@@ -26,7 +26,7 @@ last_data_date <- as.Date('01/09/2025', '%d/%m/%Y')
 
 target_dts <-
     data.frame(
-        startdate = as.Date(c('01/04/2026', '01/04/2028'), '%d/%m/%Y'),
+        startdate = as.Date(c('01/04/2026', '01/04/2027'), '%d/%m/%Y'),
         enddate = as.Date(c('31/03/2027', '01/04/2029'), '%d/%m/%Y'),
         descr = c("RTT65%", "RTT92%")
     )
@@ -87,9 +87,13 @@ test_input$Removals <- as.integer(test_input$Removals)
 test_input$Waiting.list.size <- as.integer(test_input$Waiting.list.size)
 
 # Clear any float/double number formatting, as it trips rpois over.
-monthly_bsol$Referrals <- as.integer(monthly_bsol$Referrals)
-monthly_bsol$Removals <- as.integer(monthly_bsol$Removals)
+monthly_bsol$Referrals <- as.integer(monthly_bsol$Referrals/ 4.33) # divide by 4.33 to turn monthly to weekly
+monthly_bsol$Removals <- as.integer(monthly_bsol$Removals / 4.33) # divide by 4.33 to turn monthly to weekly
+monthly_bsol$Removals <- as.integer(monthly_bsol$adj_removals / 4.33) # this is to account for missing clocks stops
+monthly_bsol$adj_removals <- NULL
+monthly_bsol$Est_renage <- NULL
 monthly_bsol$Waiting.list.size <- as.integer(monthly_bsol$Waiting.list.size)
+
 
 
 ##################Prepare data###########################
@@ -184,13 +188,13 @@ library(furrr)
 library(future.apply)
 
 # Parallel plan
-plan(multisession, workers = 10)
+plan(multisession, workers = 5)
 
 #library(future.mirai)
 #plan(mirai_multisession, workers = 6)
 
 # Your simulation function (unchanged)
-df <- df_list[[2]]
+df <- df_list[[1]]
 #rm(df)
 sim_func <- function(df) {
     current_wl <- data.frame(
@@ -198,7 +202,7 @@ sim_func <- function(df) {
         Removal = rep(as.Date(NA), df$Waiting.list.size[18])
     )
 
-    sim <- wl_simulator(
+    sim <- wl_simulator_cpp(
         start_date = as.Date(df[19,]$start_date),
         end_date = as.Date(df[19,]$end_date),
         demand = df[19,]$Referrals,
@@ -213,7 +217,7 @@ sim_func <- function(df) {
 # Apply to each specialty in df_list
 results <- map(df_list, function(df) {
     # Run 50 simulations for this specialty
-    sims <- future_replicate(20, sim_func(df), simplify = FALSE)
+    sims <- replicate(20, sim_func(df), simplify = FALSE)
     # Combine into one data frame
     bind_rows(sims)
 })
@@ -271,7 +275,7 @@ df_list <- map(df_list, function(.x) {
         factor = qexp(0.65)
     )
 
-    .x$target_wl_65or6 <- .x$target_wl_65 * 0.94
+    #.x$target_wl_65or6 <- .x$target_wl_65 * 0.94
 
     .x$target_wl_92 <- calc_target_queue_size(
         demand = .x$Referrals,
@@ -321,14 +325,14 @@ df_list <- map(df_list, function(.x) {
     cv_demand <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_demand)
     cv_capacity <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_capacity)
 
-    # .x$relief_capacity_65 <-
-    #     calc_relief_capacity(
-    #         demand = .x$Referrals,
-    #         queue_size = .x$Waiting.list.size[19],
-    #         target_queue_size = .x$target_wl_65[20],
-    #         time_to_target = 12,
-    #         cv_demand = cv_demand
-    #         )
+    .x$relief_capacity_65 <-
+        calc_relief_capacity(
+            demand = .x$Referrals,
+            queue_size = .x$Waiting.list.size[19],
+            target_queue_size = .x$target_wl_65[20],
+            time_to_target = 52,
+            cv_demand = cv_demand
+            )
     #
     # .x$relief_capacity_65or6 <-
     #     calc_relief_capacity(
@@ -339,22 +343,103 @@ df_list <- map(df_list, function(.x) {
     #         cv_demand = cv_demand
     #     )
 
+    # .x$relief_capacity_92 <-
+    #     calc_relief_capacity2(
+    #         demand = .x$Referrals,
+    #         queue_size = .x$Wl_start_lag[20],
+    #         target_queue_size = .x$target_wl_92[22],
+    #         time_to_target = 104,
+    #         num_referrals = .x$Referrals,
+    #         cv_demand = cv_demand
+    #     )
+
+    .x
+})
+
+# Sim the 2026/27
+
+df <- df_list[[1]]
+#rm(df)
+sim_func2 <- function(df) {
+    current_wl <- data.frame(
+        Referral = rep(as.Date(df$end_date[19]), df$Waiting.list.size[19]),
+        Removal = rep(as.Date(NA), df$Waiting.list.size[19])
+    )
+
+
+    sim <- wl_simulator_cpp(
+        start_date = as.Date(df[20,]$start_date),
+        end_date = as.Date(df[20,]$end_date),
+        demand = df[20,]$Referrals,
+        capacity = df[20,]$Removals, # project last point forward
+        waiting_list = current_wl
+    )
+
+    data.frame(specialty = df$Specialty[1], queue = tail(wl_queue_size(sim),1)$queue_size,
+               mean_wait = wl_stats(sim)$mean_wait)
+}
+
+
+# Apply to each specialty in df_list
+#plan(multisession, workers = 5)
+results2 <- map(df_list, function(df) {
+    # Run 50 simulations for this specialty
+    sims <- replicate(10, sim_func2(df), simplify = FALSE)
+    # Combine into one data frame
+    bind_rows(sims)
+})
+
+plan(sequential)
+
+# Combine all specialties into one data frame
+all_results2 <- bind_rows(results2)
+
+# Summarize mean and median queue per specialty
+summary_results2 <- all_results2 %>%
+    group_by(specialty) %>%
+    summarise(
+        mean_queue = mean(queue),
+        median_queue = median(queue),
+        .groups = "drop"
+    )
+
+summary_results2
+
+print(df_list[[1]], n = 50) # 15458 110
+print(df_list[[2]], n = 50) # 163286 99999
+
+# Update df_list row 19 with median_queue
+df_list <- map(df_list, function(df) {
+    spec <- df$Specialty[1]
+    median_val <- round(summary_results2$median_queue[summary_results2$specialty == spec])
+    df$Waiting.list.size[20] <- median_val
+    df
+})
+
+
+# NOw do relief capacity for 92%, now we've got wl number from 65%.
+# BSOL already at 65%
+# target capacity from NHSRwaitinglist
+# rel_capacity <- map_dfr
+df_list <- map(df_list, function(.x) {
+
+    spec <- first(.x$Specialty)
+
+    cv_demand <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_demand)
+    cv_capacity <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_capacity)
+
     .x$relief_capacity_92 <-
         calc_relief_capacity2(
             demand = .x$Referrals,
-            queue_size = .x$Wl_start_lag[20],
+            queue_size = .x$Waiting.list.size[20],
             target_queue_size = .x$target_wl_92[22],
             time_to_target = 104,
-            num_referrals = round(.x$Referrals/4.33),
+            num_referrals = .x$Referrals,
             cv_demand = cv_demand
         )
 
     .x
 })
-
-
-
-
 
 ######### Now add new capacity column #########################
 
@@ -371,10 +456,12 @@ df_list <- map(df_list, function(.x) {
     #                                    .x$relief_capacity_65or6,
     #                            .x$Removals))
     #
-    .x$calc_capacity <- round(ifelse(.x$start_date >= target_dts[1,]$startdate & .x$start_date < target_dts[2,]$enddate,
-                               .x$relief_capacity_92,
+    .x$calc_capacity <- round(ifelse(.x$start_date >= target_dts[1,]$startdate & .x$start_date < target_dts[1,]$enddate,
+                               ifelse(.x$relief_capacity_65 < .x$Removals, .x$Removals, .x$relief_capacity_65),
+                               ifelse(.x$start_date >= target_dts[2,]$startdate & .x$start_date < target_dts[2,]$enddate,
+                                      .x$relief_capacity_92,
                                ifelse(.x$start_date < target_dts[1,]$startdate, .x$Removals,
-                               .x$Referrals))) # have to keep pace with demand
+                               .x$Referrals)))) # have to keep pace with demand
 
     .x
 })
@@ -383,7 +470,7 @@ View(df_list[[1]])
 
 target_dts[1,]$startdate
 
-write.csv(df_list[[2]], "./verify2.csv")
+write.csv(df_list[[1]], "./verify.csv")
 
 # probably need to feed first one with end of 25/26 values, and second one with end of 2026/27 values.
 # need then to move each year, so is it a lagged variable?
@@ -418,22 +505,27 @@ targets_17 <- map_dfr(df_list, function(df){
 df <- df_list[[1]]
 
 library(furrr)
-library(future.mirai)
+#library(future.mirai)
 
-df_list2 <- df_list[2]
+df_list2 <- df_list[1]
+
+print(df_list2[[1]], n = 50)
 # Set up parallel plan (multisession works on most OS)
-plan(multisession, workers = 6)  # Adjust workers to your CPU cores
+plan(multisession, workers = 5)  # Adjust workers to your CPU cores
+
 #plan(mirai_multisession, workers = 6)
 start_time <- Sys.time()
 
 sim_results <- map(df_list2, function(df) {
+    #Rcpp::sourceCpp("wl_simulator.cpp")
     # Extract starting_wl from first row
     start_wl <- df[1, "Waiting.list.size", drop = TRUE]
     if (is.na(start_wl)) start_wl <- 0
 
     # Inner parallel map (optional)
-    future_map(1:1, function(i) {
-        bsol_montecarlo_WL(
+    future_map(1:25, function(i) {
+        #Rcpp::sourceCpp("wl_simulator.cpp")
+        bsol_montecarlo_WL2(
             .data = df,
             run_id = i,
             start_date_name = "start_date",
@@ -442,7 +534,7 @@ sim_results <- map(df_list2, function(df) {
             removes_name = "calc_capacity",
             starting_wl = start_wl
         )
-    }, .options = furrr_options(seed = NULL))
+    }, .options = furrr_options(seed = NULL, globals = TRUE))
 }
 )
 
@@ -485,6 +577,9 @@ mc_agg <- map(mc_agg, ~ data.frame(
     )
 )
 
+chck <- mc_agg[[1]] |>
+    as.data.frame()
+
 
 # Testing plot
 ggplot(as.data.frame(mc_bind[[1]]), aes(x = dates)) +
@@ -492,10 +587,14 @@ ggplot(as.data.frame(mc_bind[[1]]), aes(x = dates)) +
     geom_ribbon(aes(y = mean_q, ymin = lower_95CI, ymax = upper_95CI)
                 , alpha = 0.5, data = mc_agg[[1]], fill = "red") +
     geom_line(aes(y = mean_q), data = mc_agg[[1]], col = "black") +
-    geom_hline(yintercept = as.numeric(df_list[[1]][24,]$target_wl_92), col = "blue") +
+    geom_hline(yintercept = as.numeric(df_list[[1]][22,]$target_wl_92), col = "blue") +
+    annotate("text", x = as.Date("01/04/2024", "%d/%m/%Y"), y = as.numeric(df_list[[1]][22,]$target_wl_92)*1.01,
+             label = "Target waiting list for 92% at 18 weeks 2028/29", col = "blue",
+             hjust = 0.1, vjust = 0.1) +
+    scale_y_continuous(labels = comma) +
     labs(y = "Queue Size", x = "Date"
-         , title = "Simulated waiting list after raising capacity"
-         , subtitle = "Average WL over 50 runs, with 95% confidence interval")
+         , title = "Simulated BSOL waiting list after raising capacity"
+         , subtitle = "Average WL over 25 runs, with 95% point-wise confidence interval")
 
 
 # Testing plot
@@ -531,20 +630,20 @@ calc_target_capacity(demand = monthly_bsol[18,]$Referrals,
                     )
 
 target_q_65 <-
-    calc_target_queue_size(demand = (monthly_bsol[18,]$Referrals/4.33) * 1.01
+    calc_target_queue_size(demand = (monthly_bsol[20,]$Referrals/4.33)
                            , target_wait = 18
                            , factor = qexp(0.65))
 
 target_q_92 <-
-    calc_target_queue_size(demand = (monthly_bsol[18,]$Referrals/4.33) * 1.03
+    calc_target_queue_size(demand = (monthly_bsol[22,]$Referrals/4.33)
                            , target_wait = 18
                            , factor = qexp(0.92))
 
 
 
 calc_relief_capacity(
-    demand = (monthly_bsol[18,]$Referrals/4.33),
-    queue_size = monthly_bsol[18,]$Waiting.list.size,
+    demand = (monthly_bsol[20,]$Referrals/4.33),
+    queue_size = monthly_bsol[20,]$Waiting.list.size,
     time_to_target = 130,
     target_queue_size = target_q,
     cv_demand = cv_demand

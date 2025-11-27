@@ -10,7 +10,7 @@ IntegerVector rgeom_cpp(int n, double prob) {
     return out;
 }
 
-// Corrected wl_join_cpp: replicates R's rbind + sort
+// wl_join_cpp: combine and sort like R's rbind + order
 // [[Rcpp::export]]
 DataFrame wl_join_cpp(DataFrame wl_1, DataFrame wl_2, int referral_index = 0) {
     int n1 = wl_1.nrows();
@@ -26,7 +26,6 @@ DataFrame wl_join_cpp(DataFrame wl_1, DataFrame wl_2, int referral_index = 0) {
     for(int c = 0; c < n_cols; c++) {
         SEXP col1 = wl_1[c];
         SEXP col2 = wl_2[c];
-
         switch(TYPEOF(col1)) {
         case REALSXP: {
             NumericVector v_total(n_total);
@@ -47,14 +46,6 @@ DataFrame wl_join_cpp(DataFrame wl_1, DataFrame wl_2, int referral_index = 0) {
         case STRSXP: {
             CharacterVector v_total(n_total);
             CharacterVector v1(col1), v2(col2);
-            for(int i = 0; i < n1; i++) v_total[i] = v1[i];
-            for(int i = 0; i < n2; i++) v_total[n1 + i] = v2[i];
-            combined[c] = v_total;
-            break;
-        }
-        case VECSXP: {
-            List v_total(n_total);
-            List v1(col1), v2(col2);
             for(int i = 0; i < n1; i++) v_total[i] = v1[i];
             for(int i = 0; i < n2; i++) v_total[n1 + i] = v2[i];
             combined[c] = v_total;
@@ -109,13 +100,6 @@ DataFrame wl_join_cpp(DataFrame wl_1, DataFrame wl_2, int referral_index = 0) {
             sorted_cols[c] = tmp;
             break;
         }
-        case VECSXP: {
-            List v(col);
-            List tmp(n_total);
-            for(int i = 0; i < n_total; i++) tmp[i] = v[order_idx[i]];
-            sorted_cols[c] = tmp;
-            break;
-        }
         }
     }
 
@@ -123,7 +107,8 @@ DataFrame wl_join_cpp(DataFrame wl_1, DataFrame wl_2, int referral_index = 0) {
     return sorted_df;
 }
 
-// wl_schedule_cpp
+// wl_schedule_cpp (exact R logic)
+// [[Rcpp::export]]
 DataFrame wl_schedule_cpp(
         DataFrame waiting_list,
         DateVector schedule,
@@ -147,7 +132,7 @@ DataFrame wl_schedule_cpp(
             size_t idx = wl_idx[i];
             if(schedule[j] > referral[idx]) {
                 removal[idx] = schedule[j];
-                i++;
+                i++; // increment only after assignment
             }
         }
         return DataFrame::create(
@@ -241,9 +226,12 @@ DataFrame wl_simulator_cpp(
     if(daily_capacity > 0) {
         int total_slots = std::ceil(daily_capacity * number_of_days);
         DateVector schedule(total_slots);
+
+        // Correct fractional schedule
         for(int i = 0; i < total_slots; i++) {
-            schedule[i] = start_date + (int)(i / daily_capacity);
+            schedule[i] = start_date + static_cast<int>(i / daily_capacity);
         }
+
         wl_simulated = wl_schedule_cpp(wl_simulated, schedule);
     }
 
