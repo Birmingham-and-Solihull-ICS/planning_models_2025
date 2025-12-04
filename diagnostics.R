@@ -132,6 +132,16 @@ df_list <- map(df_list, function(.x) {
     .x <- .x[.x$start_date < as.Date("17/11/2025", "%d/%m/%Y"),]
     .x
 })
+.x <- df_list[[1]]
+# Recalculate WL total, as SQL calc was not right
+df_list <- map(df_list, function(.x) {
+    sub <- .x[1,]
+    .x$Waiting.list.size  <- data.table::shift(.x$Waiting.list.size, 1, type = "lag") + .x$Referrals - .x$Removals
+
+    rbind(sub, .x[2:nrow(.x),])
+})
+
+df_list[[1]]
 
 last_data_row <- nrow(df_list[[1]])
 
@@ -325,6 +335,10 @@ df_list <- map(df_list, function(.x) {
     cv_demand <- tf_summary %>% filter(Descriptor == dscr) %>% pull(cv_demand)
     cv_capacity <- tf_summary %>% filter(Descriptor == dscr) %>% pull(cv_capacity)
 
+    # Assuming we meet target list size in each period
+    .x$Waiting.list.size <- coalesce(.x$Waiting.list.size, .x$target_wl)
+
+
     .x$target_capacity <-
         calc_target_capacity(
             demand = .x$Referrals,
@@ -352,18 +366,70 @@ print(df_list[[1]], n = 92)
 print(df_list[[2]], n = 50)
 
 
+write.csv(df_list[[1]], "audiology_check.csv")
 
 
-# target capacity from NHSRwaitinglist
-# rel_capacity <- map_dfr
-df_list <- map(df_list, function(.x) {
 
-    spec <- first(.x$Specialty)
-
-    cv_demand <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_demand)
-    cv_capacity <- tf_summary %>% filter(Specialty == spec) %>% pull(cv_capacity)
+########
+# Needed to sim waiting list out as at present
+###########
 
 
-    .x
+plan(multisession, workers = 5)  # Adjust workers to your CPU cores
+
+#plan(mirai_multisession, workers = 6)
+start_time <- Sys.time()
+
+sim_results <- map(df_list, function(df) {
+    #Rcpp::sourceCpp("wl_simulator.cpp")
+    # Extract starting_wl from first row
+    start_wl <- df[1, "Waiting.list.size", drop = TRUE]
+    if (is.na(start_wl)) start_wl <- 0
+
+    # Inner parallel map (optional)
+    future_map(1:25, function(i) {
+        #Rcpp::sourceCpp("wl_simulator.cpp")
+        bsol_montecarlo_WL2(
+            .data = df,
+            run_id = i,
+            start_date_name = "start_date",
+            end_date_name = "end_date",
+            adds_name = "Referrals",
+            removes_name = "Removals",
+            starting_wl = start_wl
+        )
+    }, .options = furrr_options(seed = NULL, globals = TRUE))
+}
+)
+
+end_time <- Sys.time()
+
+
+
+i = 87
+sim_func <- function(df) {
+    current_wl <- data.frame(
+        Referral = rep(as.Date(df$start_date[last_data_row])
+                       , df$Waiting.list.size[last_data_row]),
+        Removal = rep(as.Date(NA), df$Waiting.list.size[last_data_row])
+    )
+
+    sim <- wl_simulator_cpp(
+        start_date = as.Date(df[last_data_row+1,]$start_date),
+        end_date = as.Date(df[last_data_row+1,]$end_date),
+        demand = df[87,]$Referrals,
+        capacity = df[last_data_row+1,]$Removals, # project last point forward
+        waiting_list = current_wl
+    )
+
+    data.frame(Descriptor = df$Descriptor[1], queue = tail(wl_queue_size(sim)[, 2],1),
+               mean_wait = wl_stats(sim)$mean_wait)
+}
+
+# Apply to each specialty in df_list
+results2 <- map(df_list, function(df) {
+    # Run 50 simulations for this specialty
+    sims <- future_replicate(20, sim_func(df), simplify = FALSE)
+    # Combine into one data frame
+    bind_rows(sims)
 })
-
