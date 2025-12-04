@@ -1,4 +1,3 @@
-#Generate artificial Gastro scenario using real data control parameters
 library(tidyverse)
 library(NHSRwaitinglist)
 library(scales)
@@ -48,29 +47,6 @@ tibble::tribble(
 population_growth$start_date <- as.Date(population_growth$start_date, '%d/%m/%Y')
 population_growth$end_date <- as.Date(population_growth$end_date, '%d/%m/%Y')
 
-
-
-
-######## This bit is not relevant now, but leaving in#################################
-# Generate full monthly sequence
-full_months <- tibble(start_date = seq(last_data_date %m+% months(1),
-                                 max(population_growth$start_date) %m+% months(12) - 1,
-                                 by = "month"))
-
-
-
-# Join and fill values forward
-extended_df <- full_months %>%
-    left_join(population_growth, by = "start_date") %>%
-    fill(ratio_increase, population, .direction = "down")
-
-# Manual correction as don't have time to sort logic
-extended_df[1:3,]$ratio_increase <- 1.00
-extended_df[1:3,]$population <-  1590793
-
-print(extended_df, n = 66)
-
-#################################################################################
 
 
 ##################Load data#############################
