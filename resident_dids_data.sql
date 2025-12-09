@@ -6,6 +6,7 @@
 drop table	if exists #latestweek;
 drop table	if exists #tempremovals;
 drop table	if exists #adds;
+drop table	if exists #removals;
 
 select		max(WeekEndingDate) as Latest 
 into		#latestweek 
@@ -111,8 +112,10 @@ where		t1.WeekEndingDate=tmp.WeekEndingDate
 
 ;with cte as
 (
-Select		T1.*, T2.Descriptor, t3.WaitingListDescription
-,			ROW_NUMBER() OVER (PARTITION BY NHSNumber, PatPathwayID order by WeekEndingDate) as rn
+Select		T1.WeekEndingDate, ClockStartDate,
+			t1.WeeksWait, t1.NHSNumber, t1.PatPathwayID
+			, T2.Descriptor, t3.WaitingListDescription
+,			ROW_NUMBER() OVER (PARTITION BY NHSNumber, PatPathwayID, Descriptor, ClockStartDate order by WeekEndingDate) as rn
  
 
 from		[EAT_Reporting_BSOL].[DEVELOPMENT].[BSOL0057_Data_Resident] T1
@@ -146,7 +149,7 @@ FROM #diagnostics t1 left join #adds t2 ON t1.Descriptor = t2.Descriptor and t1.
 ;with cte as
 (
 Select		T1.*, T2.Descriptor, t3.WaitingListDescription
-,			ROW_NUMBER() OVER (PARTITION BY NHSNumber, PatPathwayID order by WeekEndingDate desc) as rn
+,			ROW_NUMBER() OVER (PARTITION BY NHSNumber, PatPathwayID, Descriptor, ClockStartDate order by WeekEndingDate desc) as rn
 
 from		[EAT_Reporting_BSOL].[DEVELOPMENT].[BSOL0057_Data_Resident] T1
 LEFT JOIN	[EAT_Reporting_BSOL].[Development].[BSOL0057_RefDiagMod] T2
@@ -185,59 +188,59 @@ from		#diagnostics t1
 left join	#diagnostics t2
 on			t1.Descriptor=t2.Descriptor
 where		t1.row_num=t2.row_num+1
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-/******************************************************************************************
-Now let's get the removals sorted...
-******************************************************************************************/
-drop table if exists #tempremovals;
-select		ProviderCode
-,			ClockStartDate
-,			max(WeekEndingDate) as LatestWeekEndingDate
-,			cast(null as date) as WeekendingRemovalDate
-,			t2.Descriptor
-,			t1.PatPathwayID
-,			cast(0 as smallint) as REMOVAL
-into		#tempremovals
-from		[EAT_Reporting_BSOL].[Development].[BSOL0057_Data_Resident] t1
-LEFT JOIN	[EAT_Reporting_BSOL].[Development].[BSOL0057_RefDiagMod] T2
-ON			t1.Modality = t2.diagnostic_modality
-where		1=1
---and		NHSNumber='27117714'
-and			datename(weekday,WeekEndingDate)='Sunday'
-group by	ProviderCode
-,			ClockStartDate
-,			t2.Descriptor
-,			t1.PatPathwayID
-order by	t2.Descriptor
-,			ClockStartDate
---select * from #tempremovals
---select * from #diagnostics
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+--/******************************************************************************************
+--Now let's get the removals sorted...
+--******************************************************************************************/
+--drop table if exists #tempremovals;
+--select		ProviderCode
+--,			ClockStartDate
+--,			max(WeekEndingDate) as LatestWeekEndingDate
+--,			cast(null as date) as WeekendingRemovalDate
+--,			t2.Descriptor
+--,			t1.PatPathwayID
+--,			cast(0 as smallint) as REMOVAL
+--into		#tempremovals
+--from		[EAT_Reporting_BSOL].[Development].[BSOL0057_Data_Resident] t1
+--LEFT JOIN	[EAT_Reporting_BSOL].[Development].[BSOL0057_RefDiagMod] T2
+--ON			t1.Modality = t2.diagnostic_modality
+--where		1=1
+----and		NHSNumber='27117714'
+--and			datename(weekday,WeekEndingDate)='Sunday'
+--group by	ProviderCode
+--,			ClockStartDate
+--,			t2.Descriptor
+--,			t1.PatPathwayID
+--order by	t2.Descriptor
+--,			ClockStartDate
+----select * from #tempremovals
+----select * from #diagnostics
 
---adds 7 days on 
-update		#tempremovals
-set			WeekendingRemovalDate=dateadd(ww,+1,LatestWeekendingDate)
-,			REMOVAL=1
+----adds 7 days on 
+--update		#tempremovals
+--set			WeekendingRemovalDate=dateadd(ww,+1,LatestWeekendingDate)
+--,			REMOVAL=1
 
---removes un-necessary columns now so the final table can be aggregated to Modality-level data
-alter table #tempremovals
-drop column LatestWeekEndingDate
+----removes un-necessary columns now so the final table can be aggregated to Modality-level data
+--alter table #tempremovals
+--drop column LatestWeekEndingDate
 
-alter table #tempremovals
-drop column Providercode
+--alter table #tempremovals
+--drop column Providercode
 
-alter table #tempremovals
-drop column clockstartdate
+--alter table #tempremovals
+--drop column clockstartdate
 
-alter table #tempremovals
-drop column PatPathwayID
+--alter table #tempremovals
+--drop column PatPathwayID
 
-delete from #tempremovals
-where		Descriptor='999 Un-Mapped [Diagnostic_Modality]' --gets rid of the few, for the many!
+--delete from #tempremovals
+--where		Descriptor='999 Un-Mapped [Diagnostic_Modality]' --gets rid of the few, for the many!
 
-delete from #tempremovals 
-where		WeekendingRemovalDate>=@end --removes the rolling latest week ending date as it will chop a lot off!
+--delete from #tempremovals 
+--where		WeekendingRemovalDate>=@end --removes the rolling latest week ending date as it will chop a lot off!
 
---Handling the nulls now.... 
+----Handling the nulls now.... 
 update		#diagnostics
 set			OpeningBalance=0
 where		OpeningBalance is null
@@ -255,24 +258,24 @@ set			ClosingBalance=0
 where		ClosingBalance is null
 
 
-/******************************************************************************************
-Put in the Removals to the #tempdiagnostics table now....
-******************************************************************************************/
+--/******************************************************************************************
+--Put in the Removals to the #tempdiagnostics table now....
+--******************************************************************************************/
 
-update		t1
-set			t1.Removals=t2.Removal
-from		#diagnostics t1
+--update		t1
+--set			t1.Removals=t2.Removal
+--from		#diagnostics t1
 
-left join	(	select		weekendingremovaldate
-,							descriptor
-,							sum(removal) as removal 
-				from		#tempremovals 
-				group by	weekendingremovaldate
-,							descriptor
-			) t2
-on			t1.Descriptor=t2.Descriptor
-where		t1.WeekEndingDate=t2.WeekendingRemovalDate
-and			t2.Descriptor is not null
+--left join	(	select		weekendingremovaldate
+--,							descriptor
+--,							sum(removal) as removal 
+--				from		#tempremovals 
+--				group by	weekendingremovaldate
+--,							descriptor
+--			) t2
+--on			t1.Descriptor=t2.Descriptor
+--where		t1.WeekEndingDate=t2.WeekendingRemovalDate
+--and			t2.Descriptor is not null
 
 
 update		#diagnostics

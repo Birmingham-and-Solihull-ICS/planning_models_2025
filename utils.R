@@ -27,7 +27,7 @@ calc_relief_capacity2 <-
     }
 
 
-#
+
 #
 # wl_simulator <- function(
 #         start_date = NULL,
@@ -137,4 +137,91 @@ calc_relief_capacity2 <-
 
 
 # Build Rcpp function
-Rcpp::sourceCpp("wl_simulator.cpp")
+Rcpp::sourceCpp("wl_simulator2.cpp")
+
+
+
+
+
+#' Mean wait required for a desired exceedance proportion at a given threshold
+#'
+#' For exponential waiting times, returns the mean wait Wbar such that
+#' P(W > T) = p_exceed. Uses Wbar = T / ln(1 / p_exceed).
+#'
+#' @param threshold numeric (>0). The waiting time threshold T (e.g., weeks).
+#' @param p_exceed numeric in (0,1). Desired proportion exceeding T.
+#' @return numeric. The mean wait Wbar.
+#' @examples
+#' # P4 example: target T = 52 weeks
+#' mean_wait_for_exceedance(52, p_exceed = 0.018)  # ~12.94 weeks (≈ a quarter of target)
+#' mean_wait_for_exceedance(52, p_exceed = 0.002)  # ~8.37 weeks (≈ a sixth of target)
+#' mean_wait_for_exceedance(52, p_exceed = 0.05)   # ~17.35 weeks
+#'
+#' # Vectorised input:
+#' mean_wait_for_exceedance(52, p_exceed = c(0.10, 0.05, 0.018))
+mean_wait_for_exceedance <- function(threshold, p_exceed) {
+    if (any(!is.finite(threshold)) || any(threshold <= 0))
+        stop("`threshold` must be a finite, positive numeric value (or vector).")
+    if (any(!is.finite(p_exceed)) || any(p_exceed <= 0 | p_exceed >= 1))
+        stop("`p_exceed` must be a finite numeric in the open interval (0, 1).")
+    threshold / log(1 / p_exceed)  # log() is natural log in R
+}
+
+
+mean_wait_for_meeting <- function(threshold, p_meeting) {
+    if (any(!is.finite(threshold)) || any(threshold <= 0))
+        stop("`threshold` must be a finite, positive numeric value (or vector).")
+    if (any(!is.finite(p_meeting)) || any(p_meeting <= 0 | p_meeting >= 1))
+        stop("`p_exceed` must be a finite numeric in the open interval (0, 1).")
+    threshold / log(1 / (1 - p_meeting))  # log() is natural log in R
+}
+
+
+# -- Optional companion functions ---------------------------------------------
+
+# Given mean wait and desired exceedance proportion, return the threshold T
+# using T = - Wbar * ln(p_exceed).
+threshold_for_exceedance <- function(mean_wait, p_exceed) {
+    if (any(!is.finite(mean_wait)) || any(mean_wait <= 0))
+        stop("`mean_wait` must be a finite, positive numeric value.")
+    if (any(!is.finite(p_exceed)) || any(p_exceed <= 0 | p_exceed >= 1))
+        stop("`p_exceed` must be in (0, 1).")
+    - mean_wait * log(p_exceed)
+}
+
+threshold_for_meeting <- function(mean_wait, p_meeting) {
+    if (any(!is.finite(mean_wait)) || any(mean_wait <= 0))
+        stop("`mean_wait` must be a finite, positive numeric value.")
+    if (any(!is.finite(p_meeting)) || any(p_meeting <= 0 | p_meeting >= 1))
+        stop("`p_exceed` must be in (0, 1).")
+    - mean_wait * log(1-p_meeting)
+}
+
+
+# Given mean wait and threshold, return exceedance proportion p = P(W > T)
+# using p = exp(- T / Wbar).
+exceedance_prob <- function(mean_wait, threshold) {
+    if (any(!is.finite(mean_wait)) || any(mean_wait <= 0))
+        stop("`mean_wait` must be a finite, positive numeric value.")
+    if (any(!is.finite(threshold)) || any(threshold <= 0))
+        stop("`threshold` must be a finite, positive numeric value.")
+    exp(-threshold / mean_wait)
+}
+
+exceedance_prob(8.2, threshold = 18)
+
+
+# The "factor" k = T / mean = ln(1/p)
+factor_for_exceedance <- function(p_exceed) {
+    if (any(!is.finite(p_exceed)) || any(p_exceed <= 0 | p_exceed >= 1)) stop("p_exceed in (0,1)")
+    log(1 / p_exceed)
+}
+
+factor_for_meeting <- function(p_meeting) {
+    if (any(!is.finite(p_meeting)) || any(p_meeting <= 0 | p_meeting >= 1)) stop("p_exceed in (0,1)")
+    log(1 / (1 - p_meeting))
+}
+
+# Convenience: mean as fraction of target = 1 / k
+mean_fraction_of_target <- function(p_exceed) 1 / factor_for_exceedance(p_exceed)
+
