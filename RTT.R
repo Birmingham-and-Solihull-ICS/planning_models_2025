@@ -3,11 +3,12 @@ library(NHSRwaitinglist)
 library(scales)
 library(ggtext)
 library(zoo)
-source("monte_carlo_func.R")
-source("utils.R")
+#source("monte_carlo_func.R")
+#source("utils.R")
 library(purrr)
 library(furrr)
 library(progressr)
+library(BSOLwaitinglist)
 
 
 # set ggplot theme
@@ -34,11 +35,11 @@ population_growth <-
 tibble::tribble(
           ~start_date,    ~end_date, ~ratio_increase, ~population,
          "01/10/2025", "31/03/2026",               1,     1590793,
-         "01/04/2026", "31/03/2027",         1.00271, 1596056.425,
-         "01/04/2027", "31/03/2028",        1.005589, 1601503.998,
-         "01/04/2028", "31/03/2029",        1.009093, 1607815.611,
-         "01/04/2029", "31/03/2030",        1.013369, 1615161.207,
-         "01/04/2030", "31/03/2031",        1.017844, 1622704.257
+         "01/04/2026", "31/03/2027",        1.003309, 1596056.425,
+         "01/04/2027", "31/03/2028",        1.006733, 1601503.998,
+         "01/04/2028", "31/03/2029",        1.010701, 1607815.611,
+         "01/04/2029", "31/03/2030",        1.015318, 1615161.207,
+         "01/04/2030", "31/03/2031",        1.020006, 1622704.257
          )
 
 
@@ -96,6 +97,10 @@ tf_summary <- map_dfr(df_list, function(.x) {
         cv_capacity = cv_capacity
     )
 })
+
+
+
+
 
 
 
@@ -193,7 +198,7 @@ sim_func <- function(df) {
 # Apply to each specialty in df_list
 results <- map(df_list, function(df) {
     # Run 50 simulations for this specialty
-    sims <- replicate(20, sim_func(df), simplify = FALSE)
+    sims <- replicate(25, sim_func(df), simplify = FALSE)
     # Combine into one data frame
     bind_rows(sims)
 })
@@ -334,7 +339,7 @@ df_list <- map(df_list, function(.x) {
 
 # Sim the 2026/27
 
-df <- df_list[[1]]
+#df <- df_list[[1]]
 #rm(df)
 sim_func2 <- function(df) {
     current_wl <- data.frame(
@@ -360,7 +365,7 @@ sim_func2 <- function(df) {
 #plan(multisession, workers = 5)
 results2 <- map(df_list, function(df) {
     # Run 50 simulations for this specialty
-    sims <- replicate(10, sim_func2(df), simplify = FALSE)
+    sims <- replicate(20, sim_func2(df), simplify = FALSE)
     # Combine into one data frame
     bind_rows(sims)
 })
@@ -499,9 +504,9 @@ sim_results <- map(df_list2, function(df) {
     if (is.na(start_wl)) start_wl <- 0
 
     # Inner parallel map (optional)
-    future_map(1:25, function(i) {
+    future_map(1:50, function(i) {
         #Rcpp::sourceCpp("wl_simulator.cpp")
-        bsol_montecarlo_WL2(
+        bsol_montecarlo_WL3(
             .data = df,
             run_id = i,
             start_date_name = "start_date",
@@ -516,7 +521,7 @@ sim_results <- map(df_list2, function(df) {
 
 end_time <- Sys.time()
 
-saveRDS(sim_results, "./data/bsol_sims.rds")
+#saveRDS(sim_results, "./data/bsol_sims.rds")
 
 inner_parallel <- end_time - start_time
 #inner_sequential <- end_time - start_time
