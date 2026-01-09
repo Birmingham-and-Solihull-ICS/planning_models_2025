@@ -4,12 +4,13 @@ library(NHSRwaitinglist)
 library(scales)
 library(ggtext)
 library(zoo)
-source("monte_carlo_func.R")
+#source("monte_carlo_func.R")
 source("utils.R")
 library(purrr)
 library(furrr)
 library(future.apply)
 library(parallel)
+library(BSOLwaitinglist)
 
 
 # set ggplot theme
@@ -30,6 +31,7 @@ theme_set(
 #################
 
 last_data_date <- as.Date('01/09/2025', '%d/%m/%Y')
+
 
 target_dts <-
     data.frame(
@@ -124,7 +126,7 @@ print(df_list[[1]], n = 92)
 
 # Correct waiting list size
 df_list <- map(df_list, function(.x) {
-    sub <- .x[1,]
+    sub <- .x[1,, drop = FALSE]
     .x$Waiting.list.size  <- data.table::shift(.x$Waiting.list.size, 1, type = "lag") + .x$Referrals - .x$Removals
 
     rbind(sub, .x[2:nrow(.x),])
@@ -299,7 +301,9 @@ df_list2[[1]]
 #df <- df_list2[[1]]
 #i = 8
 plan(sequential)
-parallel::stopCluster(cl)
+plan(multisession, n=5)
+parallel::stopCluster(cl))
+
 for (i in (last_data_row + 1):nrow(df_list2[[1]])) {
 
 
@@ -569,7 +573,7 @@ sim_results_rel <- map(df_list2, function(df) {
 
     #Rcpp::sourceCpp("wl_simulator.cpp")
     # Extract starting_wl from first row
-    start_wl <- df[last_data_row, "Waiting.list.size_relief", drop = TRUE]
+    start_wl <- df[last_data_row+1, "Waiting.list.size_relief", drop = TRUE]
     if (is.na(start_wl)) start_wl <- 0
 
     df <- df[df$start_date >= target_dts$startdate[1],]
@@ -643,7 +647,7 @@ sim_results_cur <- map(df_list2, function(df) {
 
     #Rcpp::sourceCpp("wl_simulator.cpp")
     # Extract starting_wl from first row
-    start_wl <- df[last_data_row, "Waiting.list.size", drop = TRUE]
+    start_wl <- df[last_data_row+1, "Waiting.list.size", drop = TRUE]
     if (is.na(start_wl)) start_wl <- 0
 
     df <- df[df$start_date >= target_dts$startdate[1],]
