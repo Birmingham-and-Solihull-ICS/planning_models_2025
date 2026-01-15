@@ -36,11 +36,24 @@ future_dt <-
 
 out <-
     future_dt |>
-    mutate(capacity_for_period = ceiling(calc_capacity * weeks),
-           modelled_demand_for_period = round(Referrals * weeks) )|>
-    select(source_folder, Specialty, start_date, end_date,
-           capacity_for_period, modelled_demand_for_period,
-           Waiting.list.size_relief, target_wl, target)
+    mutate(capacity_relief = ceiling(calc_capacity * weeks),
+           capacity_do_nothing = ceiling(Removals * weeks),
+           predicted_demand = round(Referrals * weeks) ,
+           ICB = ifelse(substr(source_folder, 1, 2) == "BC", "BC", "BSOL"),
+           Provider = sub("^[^_]*_", "", source_folder) ) |>
+    mutate(capacity_difference = capacity_relief - capacity_do_nothing) |>
+
+    select(ICB, Provider, Specialty, start_date, end_date,
+           `Demand (predicted)` = predicted_demand,
+           `Capacity (do nothing)` = capacity_do_nothing,
+           `Waiting list size (do nothing)` = Waiting.list.size,
+           `Capacity (relief)` = capacity_relief,
+           `Waiting list size (relief)` = Waiting.list.size_relief,
+           `Target (sustainable) WL size` = target_wl,
+           `Target compliance with 18 weeks` = target,
+           `Capacity difference` = capacity_difference)
 
 
-fwrite(out, "output/activity_plans/model_wl_output.csv")
+
+fwrite(out, "output/activity_plans/model_wl_output_v2.csv")
+

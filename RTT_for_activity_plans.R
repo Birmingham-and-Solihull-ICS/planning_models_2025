@@ -30,7 +30,7 @@ target_dts <-
     data.frame(
         startdate = as.Date(c('01/04/2026', '01/04/2027', "01/04/2029"), '%d/%m/%Y'),
         enddate = as.Date(c('31/03/2027', '31/03/2029', "31/03/2031"), '%d/%m/%Y'),
-        value = c(0.65, 0.92,0.92),
+        value = c(0.65, 0.92, 0.92),
         descr = c("RTT65%", "RTT92%", "RTT92%")
     )
 
@@ -38,7 +38,7 @@ target_dts <-
 # population_growth <-
 #     tibble::tribble(
 #         ~start_date,    ~end_date, ~ratio_increase, ~population,
-#         "01/10/2025", "31/03/2026",               1,     1590793,
+#         "01/09/2025", "31/03/2026",               1,     1590793,
 #         "01/04/2026", "31/03/2027",        1.003309, 1596056.425,
 #         "01/04/2027", "31/03/2028",        1.006733, 1601503.998,
 #         "01/04/2028", "31/03/2029",        1.010701, 1607815.611,
@@ -71,7 +71,7 @@ population_growth$end_date <- as.Date(population_growth$end_date, '%d/%m/%Y')
 library(readxl)
 
 in_bc <- read_excel("data/20260107_RTT_bc.xlsx", .name_repair = "universal_quiet")
-in_bsol <- read_excel("data/20251229_RTT_bsol.xlsx", .name_repair = "universal_quiet")
+#in_bsol <- read_excel("data/20251229_RTT_bsol.xlsx", .name_repair = "universal_quiet")
 
 #in_bsol |>  group_by(Org_Code, Org_Name) |> count()
 
@@ -79,8 +79,8 @@ in_bsol <- read_excel("data/20251229_RTT_bsol.xlsx", .name_repair = "universal_q
 in_bc$Waiting.list.size <- as.integer(in_bc$Waiting_List_Size)
 in_bc$Waiting_List_Size <- NULL
 
-in_bsol$Waiting.list.size <- as.integer(in_bsol$Waiting_List_Size)
-in_bsol$Waiting_List_Size <- NULL
+#in_bsol$Waiting.list.size <- as.integer(in_bsol$Waiting_List_Size)
+#in_bsol$Waiting_List_Size <- NULL
 
 # Drop prior to 2024/25
 in_bc <-
@@ -143,21 +143,21 @@ in_bc <-
 # in_bsol <-
 #     in_bsol |>
 #     filter(!(Specialty == 'X04' & Org_Code == "RYW"))
-#
+
 
 
 # # Split into feeder df for each org. Ideally needs a wrapper to apply to each, but will manually run for now.
-# bc_total <- filter(in_bc, Org_code == "D2P2L") |> select(-Org_code, -Org_Name)
-# bc_rbk <- filter(in_bc, Org_code == "RBK") |> select(-Org_code, -Org_Name)
-# bc_rl4 <- filter(in_bc, Org_code == "RL4") |> select(-Org_code, -Org_Name)
-# bc_rna <- filter(in_bc, Org_code == "RNA") |> select(-Org_code, -Org_Name)
-# bc_rxk <- filter(in_bc, Org_code == "RXK") |> select(-Org_code, -Org_Name)
+bc_total <- filter(in_bc, Org_code == "D2P2L") |> select(-Org_code, -Org_Name)
+bc_rbk <- filter(in_bc, Org_code == "RBK") |> select(-Org_code, -Org_Name)
+bc_rl4 <- filter(in_bc, Org_code == "RL4") |> select(-Org_code, -Org_Name)
+bc_rna <- filter(in_bc, Org_code == "RNA") |> select(-Org_code, -Org_Name)
+bc_rxk <- filter(in_bc, Org_code == "RXK") |> select(-Org_code, -Org_Name)
 
-bsol_total <- filter(in_bsol, Org_Code == "15E") |> select(-Org_Code, -Org_Name)
-bsol_rrk <- filter(in_bsol, Org_Code == "RRK") |> select(-Org_Code, -Org_Name)
-bsol_rq3 <- filter(in_bsol, Org_Code == "RQ3") |> select(-Org_Code, -Org_Name)
-bsol_rrj <- filter(in_bsol, Org_Code == "RRJ") |> select(-Org_Code, -Org_Name)
-bsol_ryw <- filter(in_bsol, Org_Code == "RYW") |> select(-Org_Code, -Org_Name)
+# bsol_total <- filter(in_bsol, Org_Code == "15E") |> select(-Org_Code, -Org_Name)
+# bsol_rrk <- filter(in_bsol, Org_Code == "RRK") |> select(-Org_Code, -Org_Name)
+# bsol_rq3 <- filter(in_bsol, Org_Code == "RQ3") |> select(-Org_Code, -Org_Name)
+# bsol_rrj <- filter(in_bsol, Org_Code == "RRJ") |> select(-Org_Code, -Org_Name)
+# bsol_ryw <- filter(in_bsol, Org_Code == "RYW") |> select(-Org_Code, -Org_Name)
 
 
 #
@@ -172,7 +172,7 @@ bsol_ryw <- filter(in_bsol, Org_Code == "RYW") |> select(-Org_Code, -Org_Name)
 ############### Convert to list of data.frames per specialty#####################
 # Split data frame by Specialty, into a list.
 # Each slot in the list is a data.frame for a specialty
-df_list <- bsol_total |>  #test_input %>%
+df_list <- bc_total |>  #test_input %>%
     mutate(ratio_increase = as.numeric(NA)) |>
     group_by(Specialty) %>%
     group_split()
@@ -196,8 +196,8 @@ df_list <- map(df_list, function(.x) {
 })
 
 # Now make same month-to-week adjustment and formatting outside look, for later plotting
-bsol_total$Referrals <- as.integer(bsol_total$Referrals/ 4.33) # divide by 4.33 to turn monthly to weekly
-bsol_total$Removals <- as.integer(bsol_total$Removals / 4.33) # divide by 4.33 to turn monthly to weekly
+bc_total$Referrals <- as.integer(bc_total$Referrals/ 4.33) # divide by 4.33 to turn monthly to weekly
+bc_total$Removals <- as.integer(bc_total$Removals / 4.33) # divide by 4.33 to turn monthly to weekly
 
 
 # Chop September as it's wonky due to PAS implementation
@@ -343,6 +343,8 @@ df_list <- map(df_list, function(.x) {
     .x$relief_capacity_cur <- NA
     .x$relief_capacity_rel <- NA
     .x$Waiting.list.size_relief <- NA
+    .x$wl_performance_cur <- NA
+    .x$wl_performance_rel <- NA
 
     # Copy over right waiting list size as easier than using 2 columns in sim function.
     .x$Waiting.list.size_relief[last_data_row] <- .x$Waiting.list.size[last_data_row]
@@ -364,10 +366,15 @@ print(df_list[[2]], n = 92)
 
 #.x <- df
 plan(sequential)
-stopCluster(cl)
+
+if (exists("cl")){
+    stopCluster(cl)
+    rm(cl)
+    gc()
+}
 
 # Create workers and pre-load Rcpp compilation on each
-cl <- future::makeClusterPSOCK(workers = 5)
+cl <- future::makeClusterPSOCK(workers = 6)
 
 clusterEvalQ(cl, {
     library(BSOLwaitinglist)
@@ -431,6 +438,7 @@ for (i in (last_data_row + 1):nrow(df_list[[1]])) {
                 cv_demand = 1
 
             ))
+
 
         # manual correction for 65% target year, if capacity already higher, dont' reduce.
         .x$relief_capacity_rel[i] <- ifelse(
@@ -502,6 +510,9 @@ for (i in (last_data_row + 1):nrow(df_list[[1]])) {
         dscr <- df$Specialty[1]
         mean_val <- round(summary_results_cur$mean_queue[summary_results_cur$Specialty == dscr])
         df$Waiting.list.size[i] <- mean_val
+
+        df$wl_performance_cur[i] <- est_wait_performance(df$Referrals[i], df$Waiting.list.size[i], 18)
+
         df
     })
 
@@ -562,6 +573,8 @@ for (i in (last_data_row + 1):nrow(df_list[[1]])) {
         dscr <- df$Specialty[1]
         mean_val <- round(summary_results_rel$mean_queue[summary_results_rel$Specialty == dscr])
         df$Waiting.list.size_relief[i] <- mean_val
+
+        df$wl_performance_rel[i] <- est_wait_performance(df$Referrals[i], df$Waiting.list.size_relief[i], 18)
         df
     })
 
@@ -570,12 +583,13 @@ for (i in (last_data_row + 1):nrow(df_list[[1]])) {
 }
 
 parallel::stopCluster(cl)
+gc()
 
 plan(sequential)
 
 #502, x02,
 
-print(df_list[[17]], n = 90)
+print(df_list[[1]], n = 90)
 
 #.x <- df_list[[1]]
 
@@ -607,7 +621,7 @@ df_list <- map(df_list, function(.x) {
 
 
 
-print(df_list[[1]], n = 90)
+print(df_list[[5]], n = 90)
 
 #a <- df_list[[1]]
 
@@ -787,8 +801,9 @@ mc_agg_cur <- map(mc_agg_cur, ~ data.frame(
 )
 )
 
+gc()
 
- #write.csv(df_list2[[1]], "barium_check.csv")
+#write.csv(df_list2[[1]], "barium_check.csv")
 
 #brewer_pal(type = "div", palette = "Paired")
 
@@ -842,13 +857,13 @@ ggplot() +
 library(writexl)
 
 # Ensure list elements are named (used as sheet names)
-names(df_list) <- bc_rna |> distinct(Specialty) |> pull()
+names(df_list) <- bc_total |> distinct(Specialty) |> pull()
 
-write_xlsx(df_list, path = "./output/activity_plans/BC_rna/bc_rna.xlsx")
+write_xlsx(df_list, path = "./output/activity_plans/BC_total/bc_total.xlsx")
 
 
 out_long <- bind_rows(df_list, .id = "source")
 
-write_csv(out_long, "./output/activity_plans/BC_rna/bc_rna_long.csv")
+write_csv(out_long, "./output/activity_plans/BC_total/bc_total_long.csv")
 
 

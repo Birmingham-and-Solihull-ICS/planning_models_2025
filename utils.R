@@ -34,6 +34,15 @@ elapsed_months <- function(end_date, start_date) {
 }
 
 
+est_wait_performance <- function(demand, queue_size, target_wait){
+    # Returns the compliance against waiting list target implied by demand, target_wait, and queue_length
+    # Vectorized; will return Inf if target_queue_length == 0 and numerator > 0
+    # and NaN/NA as per R rules for 0/0 or NA inputs.
+    factor <- (demand * target_wait) / queue_size
+    pexp(factor)
+
+}
+
 #
 # wl_simulator <- function(
 #         start_date = NULL,

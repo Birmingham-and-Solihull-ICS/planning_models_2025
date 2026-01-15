@@ -16,7 +16,7 @@ stopifnot(
 )
 
 # --- Output folder ---
-out_dir <- "output/activity_plans/BSOL_total"
+out_dir <- "output/activity_plans/BC_total"
 dir.create(out_dir, showWarnings = FALSE)
 
 # Optional: annotation text per plot (or just keep single string)
@@ -131,7 +131,7 @@ make_plot <- function(
         df$Specialty[1] %||% NA
         #df$specialty[1] %||% NA
     )
-    title_base <- "Simulated BSOL - total waiting list"
+    title_base <- "Simulated BC - total waiting list"
     title_txt  <- if (!is.na(spec)) paste0(title_base, " for treatment specialty ", spec) else title_base
 
     ggplot() +
@@ -222,3 +222,4 @@ walk2(p_list, seq_along(p_list), ~ ggsave(
     filename = build_name(.y), plot = .x,
     width = 9, height = 6, dpi = 300, bg = "white"
 ))
+
