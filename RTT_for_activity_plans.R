@@ -2,8 +2,8 @@ library(tidyverse)
 library(fuzzyjoin)
 library(NHSRwaitinglist)
 library(scales)
-library(ggtext)
-library(zoo)
+#library(ggtext)
+#library(zoo)
 #source("monte_carlo_func.R")
 source("utils.R")
 library(purrr)
@@ -26,38 +26,63 @@ theme_set(
 
 last_data_date <- as.Date('01/09/2025', '%d/%m/%Y')
 
-target_dts <-
-    data.frame(
-        startdate = as.Date(c('01/04/2026', '01/04/2027', "01/04/2029"), '%d/%m/%Y'),
-        enddate = as.Date(c('31/03/2027', '31/03/2029', "31/03/2031"), '%d/%m/%Y'),
-        value = c(0.65, 0.92, 0.92),
-        descr = c("RTT65%", "RTT92%", "RTT92%")
-    )
-
-# # Bsol
-# population_growth <-
-#     tibble::tribble(
-#         ~start_date,    ~end_date, ~ratio_increase, ~population,
-#         "01/09/2025", "31/03/2026",               1,     1590793,
-#         "01/04/2026", "31/03/2027",        1.003309, 1596056.425,
-#         "01/04/2027", "31/03/2028",        1.006733, 1601503.998,
-#         "01/04/2028", "31/03/2029",        1.010701, 1607815.611,
-#         "01/04/2029", "31/03/2030",        1.015318, 1615161.207,
-#         "01/04/2030", "31/03/2031",        1.020006, 1622704.257
+# target_dts <-
+#     data.frame(
+#         startdate = as.Date(c('01/04/2026', '01/04/2027', "01/04/2029"), '%d/%m/%Y'),
+#         enddate = as.Date(c('31/03/2027', '31/03/2029', "31/03/2031"), '%d/%m/%Y'),
+#         value = c(0.65, 0.92, 0.92),
+#         descr = c("RTT65%", "RTT92%", "RTT92%")
 #     )
 
-#bc
+# CHange trajectories for NA, added 80% mid-point
+
+target_dts <-
+    data.frame(
+        startdate = as.Date(c('01/04/2026', '01/04/2027',  '01/04/2028', "01/04/2029"), '%d/%m/%Y'),
+        enddate = as.Date(c('31/03/2027', '31/03/2028', '31/03/2029', "31/03/2031"), '%d/%m/%Y'),
+        value = c(0.65, 0.80, 0.92, 0.92),
+        descr = c("RTT65%", "RTT80%", "RTT92%", "RTT92%")
+    )
+
+
+target_dts <-
+    data.frame(
+        startdate = as.Date(c('01/04/2026', "01/04/2029"), '%d/%m/%Y'),
+        enddate = as.Date(c('31/03/2029', "31/03/2031"), '%d/%m/%Y'),
+        value = c(0.92, 0.92),
+        descr = c("RTT92%", "RTT92%")
+    )
+
+
+
+
+
+# Bsol
 population_growth <-
     tibble::tribble(
-          ~start_date,    ~end_date, ~ratio_increase, ~population,
-         "01/09/2025", "31/03/2026",               1,     1254329,
-         "01/04/2026", "31/03/2027",     1.005597424,     1261350,
-         "01/04/2027", "31/03/2028",     1.011238882,     1268426,
-         "01/04/2028", "31/03/2029",     1.016872582,     1275493,
-         "01/04/2029", "31/03/2030",      1.02287851,     1283026,
-         "01/04/2030", "31/03/2031",     1.028903111,     1290583
-     )
+        ~start_date,    ~end_date, ~ratio_increase, ~population, ~adjustment_factor,
+        "01/09/2025", "31/03/2026",               1,     1590793,    0.991027558,
+        "01/04/2026", "31/03/2027",        1.003309, 1596056.425,    0.991161751,
+        "01/04/2027", "31/03/2028",        1.006733, 1601503.998,    0.991296965,
+        "01/04/2028", "31/03/2029",        1.010701, 1607815.611,    0.991226216,
+        "01/04/2029", "31/03/2030",        1.015318, 1615161.207,    0.991370238,
+        "01/04/2030", "31/03/2031",        1.020006, 1622704.257,    0.991201425
+    )
 
+# #bc
+# population_growth <-
+#     tibble::tribble(
+#           ~start_date,    ~end_date, ~ratio_increase, ~population, ~adjustment_factor,
+#          "01/09/2025", "31/03/2026",               1,     1254329,     1.013762439,
+#          "01/04/2026", "31/03/2027",     1.005597424,     1261350,     1.014112691,
+#          "01/04/2027", "31/03/2028",     1.011238882,     1268426,     1.014032883,
+#          "01/04/2028", "31/03/2029",     1.016872582,     1275493,     1.013953973,
+#          "01/04/2029", "31/03/2030",      1.02287851,     1283026,     1.014080133,
+#          "01/04/2030", "31/03/2031",     1.028903111,     1290583,     1.013893177
+#      )
+
+
+ICB <- TRUE
 
 
 # Convert Year to Date
@@ -70,27 +95,30 @@ population_growth$end_date <- as.Date(population_growth$end_date, '%d/%m/%Y')
 
 library(readxl)
 
-in_bc <- read_excel("data/20260107_RTT_bc.xlsx", .name_repair = "universal_quiet")
-#in_bsol <- read_excel("data/20251229_RTT_bsol.xlsx", .name_repair = "universal_quiet")
+#in_bc <- read_excel("data/20260107_RTT_bc.xlsx", .name_repair = "universal_quiet")
+#in_bc <- read_excel("data/20260107_RTT_bc_no_tfc.xlsx", .name_repair = "universal_quiet")
+# in_bsol <- read_excel("data/20251229_RTT_bsol.xlsx", .name_repair = "universal_quiet")
+in_bsol <- read_excel("data/20251229_RTT_bsol_no_tfc.xlsx", .name_repair = "universal_quiet")
 
 #in_bsol |>  group_by(Org_Code, Org_Name) |> count()
 
-# Rename and remove WL column so don't have to upate later code
-in_bc$Waiting.list.size <- as.integer(in_bc$Waiting_List_Size)
-in_bc$Waiting_List_Size <- NULL
+## Rename and remove WL column so don't have to upate later code
+# in_bc$Waiting.list.size <- as.integer(in_bc$Waiting_List_Size)
+# in_bc$Waiting_List_Size <- NULL
 
-#in_bsol$Waiting.list.size <- as.integer(in_bsol$Waiting_List_Size)
-#in_bsol$Waiting_List_Size <- NULL
+in_bsol$Waiting.list.size <- as.integer(in_bsol$Waiting_List_Size)
+in_bsol$Waiting_List_Size <- NULL
 
 # Drop prior to 2024/25
-in_bc <-
-    in_bc |>
-    filter(start_date > as.Date("2024-03-31", "%Y-%m-%d"))
+# in_bc <-
+#     in_bc |>
+#     filter(start_date > as.Date("2024-03-31", "%Y-%m-%d"))
 
 # # Drop prior to 2024/25
-# in_bsol <-
-#     in_bsol |>
-#     filter(start_date > as.Date("2024-03-31", "%Y-%m-%d"))
+in_bsol <-
+    in_bsol |>
+    filter(start_date > as.Date("2024-03-31", "%Y-%m-%d"))
+
 
 
 # # Drop X03 as numbers too small
@@ -98,27 +126,27 @@ in_bc <-
 #     in_bsol |>
 #     filter(Specialty != 'X03')
 
-in_bc <-
-    in_bc |>
-    filter(Specialty != 'X03')
+# in_bc <-
+#     in_bc |>
+#     filter(Specialty != 'X03')
 
 # Remove several DQ issues:
 # single 300 in RBK:
 
-in_bc <-
-   in_bc |>
-   filter(!(Specialty == '300' & Org_code == "RBK"))
-
-# 170 at rxk.  0 referrals and removal smost weeks
-
-in_bc <-
-   in_bc |>
-   filter(!(Specialty == '170' & Org_code == "RXK"))
-
-# 160 is small numbers and a bit odd
-in_bc <-
-   in_bc |>
-   filter(!(Specialty == '160' & Org_code == "RXK"))
+# in_bc <-
+#    in_bc |>
+#    filter(!(Specialty == '300' & Org_code == "RBK"))
+#
+# # 170 at rxk.  0 referrals and removal smost weeks
+#
+# in_bc <-
+#    in_bc |>
+#    filter(!(Specialty == '170' & Org_code == "RXK"))
+#
+# # 160 is small numbers and a bit odd
+# in_bc <-
+#    in_bc |>
+#    filter(!(Specialty == '160' & Org_code == "RXK"))
 
 # # Rq3 -
 # # Drop 100, 130, X05 due to very small numbers
@@ -133,8 +161,8 @@ in_bc <-
 # in_bsol <-
 #     in_bsol |>
 #     filter(!(Specialty == 'X05' & Org_Code == "RQ3"))
-#
-#
+
+
 # in_bsol <-
 #     in_bsol |>
 #     filter(!(Specialty == '150' & Org_Code == "RRJ"))
@@ -147,17 +175,66 @@ in_bc <-
 
 
 # # Split into feeder df for each org. Ideally needs a wrapper to apply to each, but will manually run for now.
-bc_total <- filter(in_bc, Org_code == "D2P2L") |> select(-Org_code, -Org_Name)
-bc_rbk <- filter(in_bc, Org_code == "RBK") |> select(-Org_code, -Org_Name)
-bc_rl4 <- filter(in_bc, Org_code == "RL4") |> select(-Org_code, -Org_Name)
-bc_rna <- filter(in_bc, Org_code == "RNA") |> select(-Org_code, -Org_Name)
-bc_rxk <- filter(in_bc, Org_code == "RXK") |> select(-Org_code, -Org_Name)
+# bc_total <- filter(in_bc, Org_code == "D2P2L") |> select(-Org_code, -Org_Name) |> mutate(adjustment = 1)
+# bc_rbk <- filter(in_bc, Org_code == "RBK") |> select(-Org_code, -Org_Name) |> mutate(adjustment = 1)
+# bc_rl4 <- filter(in_bc, Org_code == "RL4") |> select(-Org_code, -Org_Name) |> mutate(adjustment = 1)
+# bc_rna <- filter(in_bc, Org_code == "RNA") |> select(-Org_code, -Org_Name) |> mutate(adjustment = 1)
+# bc_rxk <- filter(in_bc, Org_code == "RXK") |> select(-Org_code, -Org_Name) |> mutate(adjustment = 1)
+# bc_other <- filter(in_bc, Org_code == "999") |> select(-Org_code, -Org_Name) |> mutate(adjustment = 1)
+#
+# bc_trust_total <- in_bc |>
+#     filter(Org_code != "D2P2L") |>
+#         select(-Org_code, -Org_Name) |>
+#         group_by(Specialty, start_date, end_date) |>
+#         summarise(Referrals = sum(Referrals),
+#                   Removals = sum(Removals),
+#                   Waiting.list.size = sum(Waiting.list.size))
 
-# bsol_total <- filter(in_bsol, Org_Code == "15E") |> select(-Org_Code, -Org_Name)
-# bsol_rrk <- filter(in_bsol, Org_Code == "RRK") |> select(-Org_Code, -Org_Name)
-# bsol_rq3 <- filter(in_bsol, Org_Code == "RQ3") |> select(-Org_Code, -Org_Name)
-# bsol_rrj <- filter(in_bsol, Org_Code == "RRJ") |> select(-Org_Code, -Org_Name)
-# bsol_ryw <- filter(in_bsol, Org_Code == "RYW") |> select(-Org_Code, -Org_Name)
+
+
+#
+#bsol_total <- filter(in_bsol, Org_Code == "15E") |> select(-Org_Code, -Org_Name) |> mutate(adjustment = 1)
+bsol_rrk <- filter(in_bsol, Org_Code == "RRK") |> select(-Org_Code, -Org_Name) |> mutate(adjustment = 0.5)
+bsol_rq3 <- filter(in_bsol, Org_Code == "RQ3") |> select(-Org_Code, -Org_Name) |> mutate(adjustment = 0.07)
+bsol_rrj <- filter(in_bsol, Org_Code == "RRJ") |> select(-Org_Code, -Org_Name) |> mutate(adjustment = 0.04)
+bsol_ryw <- filter(in_bsol, Org_Code == "RYW") |> select(-Org_Code, -Org_Name) |> mutate(adjustment = 0.1)
+bsol_other <- filter(in_bsol, Org_Code == "999") |> select(-Org_Code, -Org_Name) |> mutate(adjustment = 0.29)
+
+summary(lm(Referrals ~1, data = bsol_rrk))
+
+pct_log_growth <- 100 * diff(log(bsol_rrk$Referrals[(last_data_row - 11):last_data_row]))
+
+# Rates of change
+avg_growth_rate_rrk <- bsol_rrk[(last_data_row - 11):last_data_row,] %>%
+    arrange(start_date) %>%                     # ensure time order
+    summarise(avg_growth = mean(diff(Referrals) / head(Referrals, -1))) |> pull()
+
+avg_growth_rate
+
+avg_capacity_growth_rate_ryw <- bsol_ryw[(last_data_row - 11):last_data_row,] %>%
+    arrange(start_date) %>%                     # ensure time order
+    summarise(avg_growth = mean(diff(Removals) / head(Removals, -1))) |> pull()
+
+
+
+avg_capacity_growth_rate_ryw <-
+    bsol_ryw[(last_data_row - 11):last_data_row,] %>%
+    arrange(start_date) %>%                     # ensure time order
+    summarise(avg_growth = mean(diff(Removals) / head(Removals, -1))) |> pull()
+
+a |>
+    filter(dates == as.Date("2025-08-20"))
+
+
+#
+# bsol_trust_total <- in_bsol |>
+#     filter(Org_Code != "15E") |>
+#     select(-Org_Code, -Org_Name) |>
+#     group_by(Specialty, start_date, end_date) |>
+#     summarise(Referrals = sum(Referrals),
+#               Removals = sum(Removals),
+#               Waiting.list.size = sum(Waiting.list.size))
+
 
 
 #
@@ -166,19 +243,25 @@ bc_rxk <- filter(in_bc, Org_code == "RXK") |> select(-Org_code, -Org_Name)
 #monthly_bsol$Waiting.list.size <- as.integer(monthly_bsol$Waiting.list.size)
 
 
-
 ##################Prepare data###########################
 
 ############### Convert to list of data.frames per specialty#####################
 # Split data frame by Specialty, into a list.
 # Each slot in the list is a data.frame for a specialty
-df_list <- bc_total |>  #test_input %>%
-    mutate(ratio_increase = as.numeric(NA)) |>
+df_list <- bsol_rrk |>  #test_input %>%
+    mutate(ratio_increase = as.numeric(NA),
+           #adjustment_factor = as.numeric(NA)
+           ) |>
     group_by(Specialty) %>%
     group_split()
 
+## TF 300 in BSOL
+#df_list <- df_list[10]
+
 
 #.x <- df_list[[1]]
+
+#print(df_list[[1]][18,8], n = 30)
 
 # Correct removals to balance waiting list
 df_list <- map(df_list, function(.x) {
@@ -196,8 +279,8 @@ df_list <- map(df_list, function(.x) {
 })
 
 # Now make same month-to-week adjustment and formatting outside look, for later plotting
-bc_total$Referrals <- as.integer(bc_total$Referrals/ 4.33) # divide by 4.33 to turn monthly to weekly
-bc_total$Removals <- as.integer(bc_total$Removals / 4.33) # divide by 4.33 to turn monthly to weekly
+bsol_rrk$Referrals <- as.integer(bsol_rrk$Referrals/ 4.33) # divide by 4.33 to turn monthly to weekly
+bsol_rrk$Removals <- as.integer(bsol_rrk$Removals / 4.33) # divide by 4.33 to turn monthly to weekly
 
 
 # Chop September as it's wonky due to PAS implementation
@@ -233,13 +316,16 @@ df_append <- data.frame(Specialty = NA,
                         start_date = as.Date(population_growth$start_date, '%d/%m/%Y'),
                         end_date = as.Date(population_growth$end_date, '%d/%m/%Y'),
                         Referrals = NA, Removals = NA, Waiting.list.size = NA,
-                        ratio_increase = population_growth$ratio_increase)
+                        ratio_increase = population_growth$ratio_increase,
+                        adjustment = df_list[[1]]$adjustment[1]
+                        #adjustment_factor = population_growth$adjustment_factor
+                        )
 
 
 # Apply to data.frames in list.
 df_list <- map(df_list, ~ rbind(.x, df_append))
 
-print(df_list[[2]], n = 50)
+#print(df_list[[1]], n = 50)
 
 last_row <- map(df_list, nrow)
 
@@ -302,13 +388,21 @@ df_list <- map(df_list, function(.x) {
                 for (i in seq_along(new_vals)) {
                     if (is.na(new_vals[i])) {
                         if (i == 1 || !is.na(new_vals[i - 1])) {
-                            new_vals[i] <- last_val * ratio_increase[i]
+                            if(ICB == TRUE) {
+                                new_vals[i] <- last_val * ratio_increase[i]
+                            } else {
+                                new_vals[i] <- last_val * (((ratio_increase[i] - 1) * adjustment[i]) + 1)
+                            }
                         } else {
-                            new_vals[i] <- new_vals[i - 1] * ratio_increase[i]
+                            if(ICB == TRUE) {
+                                new_vals[i] <- new_vals[i - 1] * ratio_increase[i]
+                                } else {
+                                new_vals[i] <- new_vals[i - 1] * (((ratio_increase[i] - 1) * adjustment[i]) + 1)
+                            }
                         }
                     }
                 }
-                as.integer(new_vals)
+                as.integer(ceiling(new_vals))
             }
         )
 
@@ -318,7 +412,7 @@ df_list <- map(df_list, function(.x) {
 
 
 
-print(df_list[[1]], n = 50)
+#print(df_list[[1]], n = 50)
 #print(df_list[[2]], n = 50)
 
 #.x <- df_list[[1]]
@@ -333,9 +427,11 @@ df_list <- map(df_list, function(.x) {
         rename(target = value)
     .x
 })
+
 #.x<-df_list[[1]]
 # Initialize columns for later
 #j <- 1
+
 df_list <- map(df_list, function(.x) {
 
     .x$target_wl <- NA
@@ -354,7 +450,7 @@ df_list <- map(df_list, function(.x) {
 })
 
 
-print(df_list[[2]], n = 92)
+#print(df_list[[1]], n = 92)
 #print(df_list[[2]], n = 92)
 
 #####
@@ -366,12 +462,7 @@ print(df_list[[2]], n = 92)
 
 #.x <- df
 plan(sequential)
-
-if (exists("cl")){
-    stopCluster(cl)
-    rm(cl)
-    gc()
-}
+gc()
 
 # Create workers and pre-load Rcpp compilation on each
 cl <- future::makeClusterPSOCK(workers = 6)
@@ -389,17 +480,37 @@ parallel::clusterEvalQ(cl, exists("bsol_montecarlo_WL3", mode = "function"))
 # Use the cluster in your plan
 plan(cluster, workers = cl)
 
-#j <- 2
+#print(df_list[[1]], n = 50)
+
+#i <- 18
 for (i in (last_data_row + 1):nrow(df_list[[1]])) {
 
     # run NHSR waiting list functions over each data.frame in list (Specialty)
-    ##.x <- df_list2[[1]]
+
+    #.x <- df_list[[1]]
+
+
+
     df_list <- map(df_list, function(.x) {
+
+        # Add a step that says, is it 2026/27? If  wl_performance[i-1] < 0.65, 0.65, else wl_performance[i-1] + 0.07
+        .x$target[i] <-
+            # ifelse(
+            # .x$start_date[i] >= target_dts$startdate[1] &
+            #     .x$end_date[i] <= target_dts$enddate[1] &
+            #     .x$wl_performance_rel[i - 1] >= target_dts$value[1],
+            #     ifelse((.x$wl_performance_rel[i - 1] + 0.07) <= 1, .x$wl_performance_rel[i - 1] + 0.07, 0.99),
+                .x$target[i]
+
+        # )
+
+
         .x$target_wl[i] <- floor(calc_target_queue_size(
             demand = .x$Referrals[i],
             target_wait = 18,
-            factor = qexp(.x$target[i])
+            factor = qexp(.x$target[i])  # Need to amend for target 0.65 or +0.07
         ))
+
 
 
         dscr <- first(.x$Specialty)
@@ -429,6 +540,7 @@ for (i in (last_data_row + 1):nrow(df_list[[1]])) {
                 cv_demand = 1
             ))
 
+
         .x$relief_capacity_rel[i] <-
             ceiling(calc_relief_capacity(
                 demand = .x$Referrals[i],
@@ -441,15 +553,15 @@ for (i in (last_data_row + 1):nrow(df_list[[1]])) {
 
 
         # manual correction for 65% target year, if capacity already higher, dont' reduce.
-        .x$relief_capacity_rel[i] <- ifelse(
-            .x$start_date[i] >= target_dts$startdate[1] &
-            .x$end_date[i] <= target_dts$enddate[1] &
-            .x$relief_capacity_rel[i] < .x$Removals[i],
-            .x$Removals[i],
-            .x$relief_capacity_rel[i]
-
-
-            )
+        # .x$relief_capacity_rel[i] <- ifelse(
+        #     .x$start_date[i] >= target_dts$startdate[1] &
+        #     .x$end_date[i] <= target_dts$enddate[1] &
+        #     .x$relief_capacity_rel[i] < .x$Removals[i],
+        #     .x$Removals[i],
+        #     .x$relief_capacity_rel[i]
+        #
+        #
+        #     )
 
 
         .x
@@ -575,6 +687,7 @@ for (i in (last_data_row + 1):nrow(df_list[[1]])) {
         df$Waiting.list.size_relief[i] <- mean_val
 
         df$wl_performance_rel[i] <- est_wait_performance(df$Referrals[i], df$Waiting.list.size_relief[i], 18)
+
         df
     })
 
@@ -589,7 +702,7 @@ plan(sequential)
 
 #502, x02,
 
-print(df_list[[1]], n = 90)
+#print(df_list[[1]], n = 90)
 
 #.x <- df_list[[1]]
 
@@ -606,12 +719,33 @@ df_list <- map(df_list, function(.x) {
     #
     # .x
 
+    # Version used in first activity plan with 65, then 92
+    # .x$calc_capacity <- ceiling(ifelse(.x$start_date < target_dts[1,]$startdate,
+    #                                    .x$Removals, # Actual capacity
+    #                                    ifelse(.x$start_date > target_dts[2,]$enddate,
+    #                                           .x$target_capacity, # peg at target capacity for
+    #                                          # ifelse(.x$start_date >= tail(target_dts,1)$enddate,
+    #                                           #       .x$target_capacity,
+    #                                           .x$relief_capacity_rel))#) # Calcualted relief capacity
+    # )
 
+
+    # Version used in second activity plan with 65, then 92
+    # .x$calc_capacity <- ceiling(ifelse(.x$start_date < target_dts[1,]$startdate,
+    #                                    .x$Removals, # Actual capacity
+    #                                    ifelse(.x$start_date > target_dts[3,]$enddate,
+    #                                           .x$target_capacity, # peg at target capacity for
+    #                                           # ifelse(.x$start_date >= tail(target_dts,1)$enddate,
+    #                                           #       .x$target_capacity,
+    #                                           .x$relief_capacity_rel))#) # Calcualted relief capacity
+    # )
+
+    #92% only assumption
     .x$calc_capacity <- ceiling(ifelse(.x$start_date < target_dts[1,]$startdate,
                                        .x$Removals, # Actual capacity
-                                       ifelse(.x$start_date > target_dts[2,]$enddate,
+                                       ifelse(.x$start_date > target_dts[1,]$enddate,
                                               .x$target_capacity, # peg at target capacity for
-                                             # ifelse(.x$start_date >= tail(target_dts,1)$enddate,
+                                              # ifelse(.x$start_date >= tail(target_dts,1)$enddate,
                                               #       .x$target_capacity,
                                               .x$relief_capacity_rel))#) # Calcualted relief capacity
     )
@@ -621,7 +755,7 @@ df_list <- map(df_list, function(.x) {
 
 
 
-print(df_list[[5]], n = 90)
+#print(df_list[[5]], n = 90)
 
 #a <- df_list[[1]]
 
@@ -829,13 +963,13 @@ ggplot() +
              , y = as.numeric(df_list[[1]][21,]$target_wl)*0.6,
              label = "Target waiting list for 92%\nat 18 weeks 2028/29", col = "#FF7F00",
              hjust = 0.1, vjust = 0.1) +
-    scale_y_continuous(labels = comma, breaks = seq(0,20000,2000), expand = 0) +
+    scale_y_continuous(labels = comma, breaks = seq(0,120000,5000), expand = 0) +
     scale_x_date(date_breaks = "6 months", date_labels = "%b-%y", date_minor_breaks = "3 months",
                  limits = as.Date(c("2024-04-01", "2031-04-01"), "%Y-%m-%d"), expand = 0,
     ) +
     guides(x = guide_axis(check.overlap = TRUE, n.dodge = 2)) +
     labs(y = "Queue Size", x = "Date"
-         , title = "Simulated BC RTT waiting list for treatment specialty 100"
+         , title = "Simulated BSOL - RRK waiting list"
          , subtitle = "Average WL over 50 runs, with 95% point-wise confidence interval") +
     theme(axis.text.x = element_text(angle = 0),
           axis.line = element_line(color = "grey"),
@@ -849,7 +983,7 @@ ggplot() +
 
 #Need to take out the waiting list size at last point of data, next point would be sustainable 65%,
 #then next year would be sustainable 92%, then same each year.
-# Need target capacity calc., then add extr capacity in capacity and sim.
+# Need target capacity calc., then add extra capacity in capacity and sim.
 
 
 
@@ -857,13 +991,13 @@ ggplot() +
 library(writexl)
 
 # Ensure list elements are named (used as sheet names)
-names(df_list) <- bc_total |> distinct(Specialty) |> pull()
+names(df_list) <- bsol_other |> distinct(Specialty) |> pull()
 
-write_xlsx(df_list, path = "./output/activity_plans/BC_total/bc_total.xlsx")
+write_xlsx(df_list, path = "./output/activity_plans/bsol_other/bsol_other.xlsx")
 
 
 out_long <- bind_rows(df_list, .id = "source")
 
-write_csv(out_long, "./output/activity_plans/BC_total/bc_total_long.csv")
+write_csv(out_long, "./output/activity_plans/bsol_other/bsol_other_long.csv")
 
 
